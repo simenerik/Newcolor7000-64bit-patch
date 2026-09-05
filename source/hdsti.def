@@ -1,0 +1,13 @@
+LIBRARY HDSTI
+EXPORTS
+    HDSTIIsStiPresent                 @1
+    HDSTIKSSOpenFirstScannerProcessor @2
+    HDSTIKSSCloseScannerProcessor     @3
+    HDSTIKSSLockScannerProcessor      @4
+    HDSTIKSSUnLockScannerProcessor    @5
+    HDSTIKSSReadData                  @6
+    HDSTIKSSWriteData                 @7
+    HDSTIKSSReOpenScannerProcessor    @8
+    HDSTIGetNTVersion                 @9
+    HDSTIOpenFirstScanner             @10
+    HDSTICloseScanner                 @11

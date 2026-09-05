@@ -1,0 +1,23 @@
+#include <winver.h>
+1 VERSIONINFO
+FILEVERSION     1,0,0,0
+PRODUCTVERSION  1,0,0,0
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_DLL
+{
+ BLOCK "StringFileInfo"
+ {
+  BLOCK "040904E4"
+  {
+   VALUE "CompanyName",      "Community project"
+   VALUE "FileDescription",  "HDSTI SPTI replacement for Newcolor 7000 (64-bit Windows)"
+   VALUE "FileVersion",      "1.0.0.0"
+   VALUE "InternalName",     "HDSTI"
+   VALUE "OriginalFilename", "HDSTI.dll"
+   VALUE "ProductName",      "Newcolor 7000 x64 SCSI patch"
+   VALUE "Comments",         "Replaces the stock HDSTI.dll. Talks to Heidelberg TANGO / TOPAZ scanners via SCSI pass-through instead of the Windows still-image stack, removing the need for the 32-bit minidriver HDHLusd.dll. Not affiliated with Heidelberger Druckmaschinen AG."
+   VALUE "LegalCopyright",   "Free to copy, modify and redistribute."
+  }
+ }
+ BLOCK "VarFileInfo" { VALUE "Translation", 0x409, 1252 }
+}
