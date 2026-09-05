@@ -11,13 +11,36 @@ This patch replaces **one DLL** so Newcolor talks to the scanner directly over S
 pass-through, and that driver is no longer needed at all.
 
 **Confirmed working on Windows 11 x64** with a Heidelberg **TOPAZ 2+** and a **TANGO**
-on an Adaptec AVA-2906.
+on an Adaptec AVA-2906, running **Newcolor 7000 2.0.12**. Other 2.0.x builds should be
+unaffected since this patch only touches one DLL unrelated to versioning, but only
+2.0.12 has actually been tested.
+
+---
+
+## Installing Newcolor itself on 64-bit Windows
+
+Before the scanner patch is even relevant, the Newcolor installer itself needs a
+workaround on 64-bit Windows.
+
+**The `setup.exe` at the root of the install disc will not run.** This is very likely
+because it's a 16-bit stub whose only job was to detect the OS and hand off to the real
+installer — normal for software this age. 64-bit Windows has no way to run 16-bit code
+at all (unlike 32-bit programs, which run fine via WOW64), so that root launcher simply
+fails outright.
+
+**The fix:** don't run the top-level `setup.exe`. Instead, open the **`Setup`** folder on
+the disc and run the installer `.exe` inside it directly. That one is the real 32-bit
+InstallShield installer, and it runs under 64-bit Windows without any problem.
+
+Install to somewhere **outside Program Files** — see the SCSI hardware notes below for
+why — then proceed to the scanner patch.
 
 ---
 
 ## Install
 
-1. Install Newcolor 7000 2.0 normally, with your own serial number.
+1. Install Newcolor 7000 2.0 (see above for the 64-bit installer workaround), with your
+   own serial number.
 2. Download the release zip from the [Releases page](../../releases), extract it.
 3. Close Newcolor.
 4. Right-click **`Install.cmd`** → Run as administrator.
