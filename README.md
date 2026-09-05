@@ -18,9 +18,14 @@ on an Adaptec AVA-2906.
 ## Install
 
 1. Install Newcolor 7000 2.0 normally, with your own serial number.
-2. Download the release zip, extract it.
+2. Download the release zip from the [Releases page](../../releases), extract it.
 3. Close Newcolor.
 4. Right-click **`Install.cmd`** → Run as administrator.
+   (Double-clicking also works — it asks for elevation itself.)
+
+The installer locates Newcolor automatically by checking, in order: the folder the patch
+is run from, the Windows uninstall registry, a list of common install paths, and a search
+of Program Files and the drive roots. If none of that finds it, it asks you for the path.
 
 `Uninstall.cmd` puts the original back.
 
@@ -29,6 +34,72 @@ and **run Newcolor as Administrator** (pass-through is refused to non-elevated p
 
 **Do not install the HDHLusd driver.** It is 32-bit, Windows x64 will refuse it, and this
 patch removes the need for it.
+
+---
+
+## Manual install (if `Install.cmd` doesn't work)
+
+The installer is a convenience, not a requirement. Everything it does can be done by hand
+in a few minutes, and this is exactly how the patch was first proven working, before any
+installer existed.
+
+1. Locate your Newcolor 7000 folder — the one containing `NC7000.exe`.
+
+2. Open Command Prompt or PowerShell **as Administrator** in that folder.
+
+3. Back up the original driver (skip this if you've already done it once):
+   ```
+   ren HDSTI.dll HDSTI_stock.dll
+   ```
+
+4. Copy in the replacement files from the downloaded release:
+   ```
+   copy "C:\path\to\downloaded\HDSTI.dll" .
+   copy "C:\path\to\downloaded\hdsti.ini" .
+   ```
+
+5. Unblock the DLL, since Windows tags anything downloaded from the internet:
+   ```
+   Unblock-File HDSTI.dll
+   ```
+
+6. Run Newcolor **as Administrator** and select your scanner under Input source.
+
+**To undo:** delete `HDSTI.dll`, then rename `HDSTI_stock.dll` back to `HDSTI.dll`.
+
+If the scanner still isn't found after this, set `Log=1` in `hdsti.ini`, reproduce the
+problem, and read `hdsti.log` in the same folder — see **Troubleshooting** below.
+
+---
+
+## Troubleshooting
+
+Set `Log=1` in `hdsti.ini`, close and reopen Newcolor, reproduce the problem, then read
+`hdsti.log` next to the DLL. Set it back to `0` afterward — logging every command slows
+real scans noticeably.
+
+| In the log | Meaning | What to do |
+|---|---|---|
+| `no scanner matching 'TOPAZ'` (or similar) | The scanner wasn't found on the bus, or its product string doesn't match what's configured | Check the `[types]` section in `hdsti.ini`. The log's `skipping '...' (does not match ...)` line shows the exact product string your scanner reported — use that. |
+| `ioctl failed, win32 error 5` | Access denied | Run Newcolor as Administrator. SCSI pass-through is refused otherwise. |
+| `scsi status 02  sense 05/20/00` | Illegal request / invalid command opcode | The scanner rejected `SendOpcode` or `ReceiveOpcode` in `hdsti.ini`. Try other values — see the comments in the file. |
+| `scsi status 02  sense 05/24/00` | Invalid field in CDB | Opcode was accepted but something in the command layout was wrong. |
+| `sense 06/29/00` | UNIT ATTENTION — the scanner just reset | Normal right after a firmware upload. The patch retries automatically once (`RetryUnitAttention=1` in v1.1+); on v1.0.x Newcolor itself handles the retry. |
+| "Scanner X is already used as input source" | A `[types]` pattern in `hdsti.ini` is empty or too broad, so one scanner type is answering for another | Every entry under `[types]` must be a specific substring. Never leave one blank — an empty pattern matches *any* scanner. |
+| Scanner not listed in Device Manager at all | Windows can't see it on the bus — this is a hardware problem, not a software one | Check: scanner switched **on before** the PC booted (SCSI is enumerated at startup only), bus terminated at both ends, no SCSI ID collision with the card (usually ID 7), cable seated properly. |
+| Scanner shown under "Other devices" with a yellow warning icon | This is **correct and expected** | Windows has no built-in driver for SCSI processor-type devices, and none is wanted — the patch talks to it directly. |
+
+**Before assuming a software problem, confirm Windows can see the scanner at all.** The
+`tools/scsiscan` utility included in the release lists everything on the SCSI bus without
+sending it any commands:
+
+```
+bus 0  id 5  lun 0  processor  LinoHell TOPAZ 2+ Scanner 1.0  free
+```
+
+`free` means nothing has claimed the device and pass-through can reach it. If the scanner
+doesn't appear here, no amount of Newcolor or `hdsti.ini` configuration will fix it — see
+`tools/README.md` for what to check.
 
 ---
 
@@ -87,11 +158,8 @@ INQUIRY product string:
 4=TANGO
 ```
 
-If your scanner is not found, set `Log=1`, reproduce, and look in `hdsti.log` for the
-`skipping` line — it prints the exact string the scanner reported. Put that here.
-**Never leave a line empty**: an empty pattern matches any scanner, so one type will claim
-a device belonging to the other family and Newcolor reports
-*"Scanner TANGO is already used as input source"*.
+If your scanner is not found, follow the **Troubleshooting** steps above — the `skipping`
+line in `hdsti.log` tells you exactly what to put here.
 
 ---
 
@@ -111,22 +179,6 @@ Hard-won and not documented anywhere obvious:
 - Install Newcolor **outside Program Files**. It writes its licence file into its own
   folder; Windows redirects or blocks that under Program Files, producing licence errors
   that look like a bad serial number.
-
-## Check the scanner before blaming the software
-
-Prove Windows can see the scanner before involving Newcolor at all. The `scsiscan` tool
-lists everything on the SCSI bus (read-only — it sends no commands to any device):
-
-```
-bus 0  id 5  lun 0  processor  LinoHell TOPAZ 2+ Scanner 1.0  free
-```
-
-`free` means nothing has claimed the device and pass-through can reach it. In Device
-Manager the scanner appears under **Other devices** with a yellow mark — that is correct
-and expected, since Windows has no driver for processor-type devices and none is wanted.
-
-If it does not appear, the problem is below the software: power-on order, bus termination,
-or a SCSI ID collision with the card (usually ID 7).
 
 ---
 
