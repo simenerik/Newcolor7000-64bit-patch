@@ -202,7 +202,7 @@ Hard-won and not documented anywhere obvious:
 - Install Newcolor **outside Program Files**. It writes its licence file into its own
   folder; Windows redirects or blocks that under Program Files, producing licence errors
   that look like a bad serial number.
-
+- The patch searches every SCSI adapter, bus, and ID automatically — it does not depend on the scanner being at a fixed SCSI ID. Moving it to a different ID or card requires no configuration change.
 ---
 
 ## Building
