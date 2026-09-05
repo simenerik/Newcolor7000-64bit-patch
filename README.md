@@ -29,7 +29,7 @@ at all (unlike 32-bit programs, which run fine via WOW64), so that root launcher
 fails outright.
 
 **The fix:** don't run the top-level `setup.exe`. Instead, open the **`Setup`** folder on
-the disc and run the installer `.exe` inside it directly. That one is the real 32-bit
+the disc and run the setup `.exe` inside it directly. That one is the real 32-bit
 InstallShield installer, and it runs under 64-bit Windows without any problem.
 
 Install to somewhere **outside Program Files** — see the SCSI hardware notes below for
