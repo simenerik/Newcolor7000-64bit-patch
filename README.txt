@@ -1,10 +1,6 @@
 Newcolor 7000 2.0 - 64-bit Windows scanner patch
 ================================================
-Version 1.0.1
-
-Scanner code identical to 1.0, which was confirmed on a TOPAZ 2+ and a
-TANGO. Only the installer changed: it now finds Newcolor automatically
-wherever it is installed, including under Program Files.
+Version 1.0
 
 Lets Newcolor 7000 drive Heidelberg TANGO and TOPAZ drum scanners on 64-bit
 Windows. Confirmed working on Windows 11 x64 with a TOPAZ 2+ and a TANGO on

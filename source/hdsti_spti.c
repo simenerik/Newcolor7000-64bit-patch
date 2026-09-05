@@ -53,7 +53,7 @@
 
 /* ---- configuration (hdsti.ini next to the DLL, section [hdsti]) -------- */
 static char  cfg_vendor[16]  = "";      /* optional vendor filter; "" = any */
-static char  cfg_prod[16][32];         /* type -> INQUIRY product substring */
+static char  cfg_prod[16][128];         /* type -> INQUIRY product substring */
 static int   cfg_send_op     = 0x0A;   /* SCSI SEND    */
 static int   cfg_recv_op     = 0x08;   /* SCSI RECEIVE */
 static int   cfg_timeout     = 120;    /* seconds per command */
@@ -61,6 +61,7 @@ static int   cfg_chunk_kb    = 0;      /* 0 = derive from adapter capability */
 static int   cfg_port        = -1;     /* -1 = search all ports */
 static int   cfg_log         = 1;
 static int   cfg_openmode    = 1;      /* 0=shared 1=exclusive-fail 2=same-handle */
+static int   cfg_retry_ua    = 1;      /* retry once on UNIT ATTENTION      */
 static int   cfg_zero_out    = 0;      /* write 0 to the two out-pointer args */
 
 
@@ -148,11 +149,13 @@ static void load_cfg(void)
     cfg_log      = GetPrivateProfileIntA("hdsti", "Log",           cfg_log,      ini);
     cfg_openmode = GetPrivateProfileIntA("hdsti", "OpenMode",      cfg_openmode, ini);
     cfg_zero_out = GetPrivateProfileIntA("hdsti", "ZeroOutArgs",   cfg_zero_out, ini);
+    cfg_retry_ua = GetPrivateProfileIntA("hdsti", "RetryUnitAttention", cfg_retry_ua, ini);
     {   /* [types] maps Newcolor's scanner-type number to a product substring.
            Defaults cover every scanner these modules support. */
         int t; char key[8];
         lstrcpynA(cfg_prod[3], "TOPAZ", sizeof(cfg_prod[3]));
-        lstrcpynA(cfg_prod[4], "TANGO", sizeof(cfg_prod[4]));
+        lstrcpynA(cfg_prod[4], "TANGO,PRIMESCAN,PRIME,NEXSCAN,NEX",
+                  sizeof(cfg_prod[4]));
         for (t = 0; t < 16; t++) {
             wsprintfA(key, "%d", t);
             GetPrivateProfileStringA("types", key, cfg_prod[t],
@@ -162,6 +165,25 @@ static void load_cfg(void)
 }
 
 /* ---- device discovery ------------------------------------------------- */
+/* patterns is a comma-separated list; product matches if ANY entry is a
+   substring of it. Never use an empty list as a wildcard: a type that
+   matches any scanner will claim one belonging to another family. */
+static int prod_matches(const char *product, const char *patterns)
+{
+    char buf[128], *p, *q;
+    if (!patterns || !patterns[0]) return 0;
+    lstrcpynA(buf, patterns, sizeof(buf));
+    p = buf;
+    while (p && *p) {
+        q = strchr(p, ',');
+        if (q) *q = 0;
+        while (*p == ' ') p++;
+        if (*p && strstr(product, p)) return 1;
+        p = q ? q + 1 : NULL;
+    }
+    return 0;
+}
+
 static int probe(struct dev *d, int n, const char *prod_match)
 {
     char path[32], buf[8192];
@@ -195,7 +217,7 @@ static int probe(struct dev *d, int n, const char *prod_match)
                 char prod[17] = {0}, ven[9] = {0};
                 memcpy(prod, q->InquiryData + 16, 16);
                 memcpy(ven,  q->InquiryData + 8,  8);
-                if (prod_match[0] && !strstr(prod, prod_match)) {
+                if (!prod_matches(prod, prod_match)) {
                     lg("  skipping '%s %s' (does not match '%s')",
                        ven, prod, prod_match);
                     if (q->NextInquiryDataOffset == 0 ||
@@ -255,7 +277,9 @@ static int scsi_io(struct dev *d, int to_device, BYTE *data, DWORD len, DWORD *d
     SPTD_SENSE s;
     DWORD ret = 0;
     BOOL ok;
+    int retrying = 0;
 
+again:
     memset(&s, 0, sizeof(s));
     s.sptd.Length             = sizeof(SCSI_PASS_THROUGH_DIRECT);
     s.sptd.PathId             = d->path;
@@ -285,9 +309,18 @@ static int scsi_io(struct dev *d, int to_device, BYTE *data, DWORD len, DWORD *d
         return 0;
     }
     if (s.sptd.ScsiStatus != 0) {
+        UCHAR key = s.sense[2] & 0x0f;
         lg("  scsi status %02X  sense %02X/%02X/%02X (key/asc/ascq)",
-           s.sptd.ScsiStatus, s.sense[2] & 0x0f, s.sense[12], s.sense[13]);
+           s.sptd.ScsiStatus, key, s.sense[12], s.sense[13]);
         hexdump("sense:", s.sense, sizeof(s.sense));
+        /* Key 06 = UNIT ATTENTION: the device announcing it just reset,
+           which happens right after a firmware upload. Standard practice
+           is to re-issue the command once. */
+        if (key == 0x06 && cfg_retry_ua && !retrying) {
+            lg("  unit attention -> retrying once");
+            retrying = 1;
+            goto again;
+        }
         return 0;
     }
     *done = s.sptd.DataTransferLength;
