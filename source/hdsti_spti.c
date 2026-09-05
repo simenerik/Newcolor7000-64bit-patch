@@ -151,8 +151,8 @@ static void load_cfg(void)
     {   /* [types] maps Newcolor's scanner-type number to a product substring.
            Defaults cover every scanner these modules support. */
         int t; char key[8];
-        lstrcpynA(cfg_prod[3], "TOPAZ", sizeof(cfg_prod[3]));   /* Topaz2.ext */
-        lstrcpynA(cfg_prod[4], "TANGO", sizeof(cfg_prod[4]));   /* Topaz.ext  */
+        lstrcpynA(cfg_prod[3], "TOPAZ", sizeof(cfg_prod[3]));
+        lstrcpynA(cfg_prod[4], "TANGO", sizeof(cfg_prod[4]));
         for (t = 0; t < 16; t++) {
             wsprintfA(key, "%d", t);
             GetPrivateProfileStringA("types", key, cfg_prod[t],

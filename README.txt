@@ -1,6 +1,10 @@
 Newcolor 7000 2.0 - 64-bit Windows scanner patch
 ================================================
-Version 1.0
+Version 1.0.1
+
+Scanner code identical to 1.0, which was confirmed on a TOPAZ 2+ and a
+TANGO. Only the installer changed: it now finds Newcolor automatically
+wherever it is installed, including under Program Files.
 
 Lets Newcolor 7000 drive Heidelberg TANGO and TOPAZ drum scanners on 64-bit
 Windows. Confirmed working on Windows 11 x64 with a TOPAZ 2+ and a TANGO on
@@ -25,10 +29,24 @@ INSTALL
 -------
   1. Close Newcolor.
   2. Right-click Install.cmd -> Run as administrator.
+     (Double-clicking also works - it asks for elevation itself.)
 
-It finds the installation, renames the original HDSTI.dll to
-HDSTI_stock.dll, and puts the replacement in place. Run Uninstall.cmd to
-put everything back.
+It locates Newcolor by checking, in order: the folder the patch is in, the
+Windows uninstall registry, a list of common paths, and finally a search of
+Program Files and the drive roots. If all of that fails it asks you to type
+the path.
+
+Program Files installations work fine. The installer will warn you that
+Newcolor writes its licence file into its own folder, which Windows may
+redirect there - if you ever see licence errors that look like a bad serial,
+that is the likely cause and reinstalling to e.g. C:\newcolor fixes it.
+
+It renames the original HDSTI.dll to HDSTI_stock.dll (once - re-running will
+not overwrite the backup) and puts the replacement in place. An existing
+hdsti.ini is left alone so your settings survive an update; delete it and
+re-run to pick up new defaults.
+
+Uninstall.cmd puts everything back.
 
 
 THEN
@@ -86,12 +104,30 @@ Read at startup, in the same folder as the DLL.
 
 SUPPORTED
 ---------
-  Confirmed:  TOPAZ 2+, TANGO
-  Expected:   TOPAZ 2, TOPAZ iX   - same modules, same transport
-  Unknown:    Primescan, Nexscan  - modules not available for testing.
-              They may use HDSCSI.dll (a separate ASPI/SPTI path that ships
-              with Newcolor) rather than HDSTI.dll, in which case this patch
-              is not involved at all.
+Every scanner Newcolor 7000 supports goes through this patch. There are only
+two scanner modules, and both use KSS32.dll -> HDSTI.dll:
+
+    Topaz.ext   (type 4)  ->  TANGO, Primescan, Nexscan F4000
+    Topaz2.ext  (type 3)  ->  TOPAZ 2, TOPAZ 2+, TOPAZ iX
+
+HDSCSI.dll ships with Newcolor and exports a full ASPI interface, but
+nothing imports it. It is unused.
+
+  Confirmed on hardware:  TOPAZ 2+, TANGO
+  Same module, untested:  TOPAZ 2, TOPAZ iX, Primescan, Nexscan F4000
+
+For the untested four the transport is identical, so the only thing that can
+go wrong is device matching - the [types] list in hdsti.ini must contain a
+substring of what the scanner reports in its INQUIRY product string. If a
+scanner is not found, set Log=1 and look for the "skipping" line: it prints
+the exact string reported. Add that to the list.
+
+Firmware notes, in case a boot upload fails:
+  TANGO and Primescan share one firmware set and are byte-identical
+  (FEED.66, HEAD.66, FILEDSP1.c30). The Nexscan F4000 uses a single
+  F3.c30 instead. TOPAZ 2 and TOPAZ iX each have their own .66/.c30 pair.
+  Topaz.ext references all four filenames and picks per scanner, so a
+  missing f3.C30 is normal unless a Nexscan is installed.
 
 
 TROUBLESHOOTING
