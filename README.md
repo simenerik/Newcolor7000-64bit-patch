@@ -138,8 +138,7 @@ by `tifffile` with warnings as errors, and a replay of the hook's decision order
 ## Credits
 
 Thanks to **Karl Hudson** for keeping these machines alive, and to
-**Philipp Wagner**, who solved the same problems independently and has related
-work of his own.
+**Philipp Wagner**
 
 ---
 
