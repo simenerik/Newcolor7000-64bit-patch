@@ -1,157 +1,84 @@
 # Newcolor 7000 on 64-bit Windows
 
-Heidelberg's **Newcolor 7000 2.0** (2002) cannot drive its drum scanners on
-64-bit Windows, and cannot produce a scan larger than about 2 GB on any Windows
-at all. Both are fixed here by replacing a single DLL.
+Lets Heidelberg **Newcolor 7000 2.0** drive its scanners on 64-bit Windows 10/11,
+and scan files larger than 2 GB. It replaces one file, `HDSTI.dll`.
 
-**Confirmed on Windows 11 x64** — Heidelberg **TOPAZ 2+** and **TANGO**, Adaptec
-**AVA-2906**, Newcolor **2.0.12**:
+- Scanner works with **no Heidelberg driver** installed
+- Scans above 2 GB and above 4 GB complete and save
+- Tested with TOPAZ 2+ and TANGO on Windows 11 (Adaptec AVA-2906) and Windows 10,
+  Newcolor 2.0.12 and 2.0.19
 
-- scanner reachable with no Heidelberg driver installed
-- a **6 GB** working file written and read back by Newcolor itself
-- a **4.87 GB BigTIFF** saved — 12,042 × 67,363, 811 megapixels, 16-bit CIELAB
-- an XPan frame at 11,000 dpi, 14,069 × 55,082, saved at 4.3 GB and opened in Photoshop
-
-**[Download the latest release](../../releases)** · [Installation guide](HOW-TO-INSTALL.txt)
+**[Download the latest release](../../releases/latest)**
 
 ---
 
-## The two problems
+## You need
 
-### The scanner driver cannot exist on x64
+- A SCSI card with a 64-bit Windows driver
+- Your own licensed copy of Newcolor 7000 2.0 and its serial number
 
-`HDHLusd.dll` is a 32-bit **in-process COM server**. On x64 the imaging service
-runs as a 64-bit process, and a 32-bit in-process COM server can never load into
-one. No signing option, compatibility shim or registry key changes that, and
-porting it needs source nobody has. Windows says so directly:
+## Install
 
-> The folder you specified does not contain a compatible software driver for the
-> device. If the folder contains a driver, make sure it is made to work with
-> Windows for x64-based systems.
+1. **Install Newcolor** to `C:\newcolor`, **not** Program Files.
+   Use the `setup.exe` inside the disc's **`Setup`** folder — the one at the disc
+   root won't start on 64-bit Windows.
+   Don't install the HDHLusd driver.
+2. **Close Newcolor**, then double-click **`patch\Install.cmd`** and accept the
+   admin prompt. It finds Newcolor automatically and backs up the original DLL.
+3. **Switch the scanner on, then start the PC.**
+4. Run Newcolor **as administrator** and pick your scanner under *Input source*.
 
-The fix cuts one layer higher:
+Tip: right-click the Newcolor shortcut → Properties → Compatibility → tick
+*Run this program as an administrator*.
+
+`patch\Uninstall.cmd` restores the original.
+
+## Scans larger than 4 GB
+
+Open `C:\newcolor\hdsti.ini` and set:
 
 ```
-Topaz.ext / Topaz2.ext
-  └─> KSS32.dll
-       └─> HDSTI.dll          ← the ONLY module that touches the still-image stack
-            └─> sti.dll → stisvc (64-bit)
-                 └─> HDHLusd.dll   ← 32-bit, cannot load here
+BigTIFFOutput=1
 ```
 
-`KSS32.dll` uses exactly **eight** functions from `HDSTI.dll`. Reimplementing
-those on SCSI pass-through removes `sti.dll`, `stisvc` and `HDHLusd.dll`
-entirely. Nothing above `HDSTI.dll` changes.
+Files that large have to be saved as **BigTIFF**. Photoshop and Affinity open
+them; GIMP crashes on very large images because its TIFF plug-in is 32-bit.
+Leave it at `0` otherwise. Keep free disk space of about 2.5× the scan size.
 
-### Every offset in the file pipeline is 32-bit
+*BigTIFF output is verified on Newcolor 2.0.12. On 2.0.19 it is untested with
+this build — try a small scan first.*
 
-Newcolor writes through **libtiff 3.x**, registering its own I/O callbacks via
-`TIFFClientOpen`. On Windows those callbacks are 32-bit, which produces two
-separate walls.
+## If it doesn't work
 
-**At 2 GiB** — with `lpDistanceToMoveHigh = NULL`, `SetFilePointer` reads the
-distance as *signed*, so any position above 2,147,483,647 is negative and fails
-with `ERROR_NEGATIVE_SEEK`. Writing pixels never seeks, so a large scan captures
-perfectly and then dies at close when libtiff seeks to write the directory.
-Newcolor reports *"not enough space"* with the disk nearly empty.
+| Problem | Fix |
+|---|---|
+| *Could not find scanner* | Run Newcolor as administrator. Scanner must be on before the PC boots. |
+| Still not found | Run `tools\scsiscan32.exe` as administrator. If the scanner isn't listed, check cable, termination and SCSI ID. If it says `CLAIMED`, a driver has taken it. |
+| Scanner shows under *Other devices* with a yellow mark | That's correct — leave it. |
+| Hangs on the splash screen | Windows print spooler is stuck. Test with `Get-Printer` in PowerShell; if that hangs too, run `Stop-Service Spooler -Force; Set-Service Spooler -StartupType Disabled` (turns off printing). |
+| Licence errors that look like a bad serial | Newcolor is under Program Files. Reinstall to `C:\newcolor`. |
+| *Not enough space* past 2 GB with plenty free | Patch isn't active. `C:\newcolor\HDSTI.dll` should be **65,536 bytes**. |
 
-**At 4 GiB** — `toff_t` is `uint32`, so past 2³² every offset libtiff records is
-wrapped, including the one it seeks to when writing the directory. Left alone it
-writes the directory **on top of pixel data** and reports success.
-
----
-
-## How it is fixed
-
-**SCSI transport.** Finds the scanner by INQUIRY product string and talks to it
-with `IOCTL_SCSI_PASS_THROUGH_DIRECT`. The scanner reports as a SCSI *processor*
-device; SEND (`0x0A`) and RECEIVE (`0x08`) carry the byte stream.
-
-**Seek correction.** Patches the import tables of `IDHTempOutput`, `IDHTempInput`
-and `IDHTiffOutput` so their `SetFilePointer` calls reinterpret the offset as
-unsigned and seek with a real 64-bit value. Below 2 GiB the original path is used
-unchanged.
-
-**Offset translation.** Each time `SEEK_END` yields a position at or above 4 GiB,
-the `(wrapped, true)` pair is recorded; any later seek matching a recorded value
-is redirected. Exact matches only — arithmetic un-wrapping guesses wrong on small
-legitimate offsets like the 4-byte header pointer and destroys pixel data.
-Newcolor *renames* the temp file between writing and reading it, so the table is
-held in memory and matched by file size.
-
-**BigTIFF output.** The saved file is converted at close — 16-byte header,
-20-byte IFD entries, 64-bit offsets. The temp file deliberately stays classic
-TIFF, because libtiff 3.x cannot *read* BigTIFF and Newcolor reads its temp back.
+Something else: set `Log=1` in `hdsti.ini`, reproduce, and check `hdsti.log`
+and `temphook.log` in `C:\newcolor`. Set it back to `0` after.
 
 ---
 
-## Supported scanners
+## Contents
 
-| Module | Type | Scanners |
-|---|---|---|
-| `Topaz2.ext` | 3 | TOPAZ 2, TOPAZ 2+, TOPAZ iX |
-| `Topaz.ext` | 4 | TANGO, Primescan, Nexscan F4000 |
-
-Confirmed on TOPAZ 2+ and TANGO. The rest share the same code path.
-
----
-
-## SCSI hardware
-
-Hard-won and not documented anywhere obvious:
-
-- The **Adaptec AVA-2906 is an AIC-7850**, in the AIC-78xx family despite the
-  model number. Works on Windows 11 x64 with the *modified* `AHA-29xx` `djsvs`
-  package; the plain `Aic78xx` package does not recognise it.
-- That package has **no `.cat` file**, so it needs Secure Boot off and test
-  signing on. It is **boot-start** — take a restore point first.
-- Most modern PCs are PCIe only, and PCIe SCSI cards are rare and expensive.
-  An older PC with a PCI slot is often easier.
-- The scanner appears under **Other devices** with a yellow mark. That is
-  correct — Windows has no driver for SCSI processor devices and none is wanted.
-- Install Newcolor **outside Program Files**; it writes its licence file into its
-  own folder and Windows blocks that, producing errors that look like a bad serial.
-- The disc's root `setup.exe` is 16-bit and will not run on x64. Use the one
-  inside the `Setup` folder.
-
----
-
-## Building
-
-32-bit only.
-
-```sh
-i686-w64-mingw32-windres version.rc -O coff -o version.o
-i686-w64-mingw32-gcc -shared -o HDSTI.dll hdsti_spti.c temphook.c version.o \
-    hdsti.def -Wall -Os -s -static-libgcc
+```
+patch/    HDSTI.dll, hdsti.ini, Install.cmd, Uninstall.cmd
+tools/    scsiscan (SCSI device lister), BigTIFF and large-TIFF utilities
+source/   full source
+docs/     technical write-up
 ```
 
-The `.def` fixes the export **ordinals** — `KSS32.dll` imports by ordinal, so
-they must never be reordered.
+How it works: [`docs/TECHNICAL.md`](docs/TECHNICAL.md).
 
-`source/` includes three harnesses that reproduce everything against real
-libtiff 3.9.7 with no hardware: a 4.6 GB round trip, a 4.6 GB BigTIFF validated
-by `tifffile` with warnings as errors, and a replay of the hook's decision order.
+## Credits and licence
 
----
+Thanks to Karl Hudson and Philipp Wagner.
 
-## Credits
-
-Thanks to **Karl Hudson** for keeping these machines alive, and to
-**Philipp Wagner**
-
----
-
-## Licence
-
-The replacement `HDSTI.dll` and its source are original work, written from
-analysis of the interface between `KSS32.dll` and `HDSTI.dll`. They contain no
-Heidelberg code and are released under the MIT licence.
-
-**Newcolor 7000 itself is copyright Heidelberger Druckmaschinen AG and is not
-included here.** Use your own licensed copy. This project does not bypass or
-modify its licensing.
-
-Not affiliated with or endorsed by Heidelberger Druckmaschinen AG. No warranty —
-this drives expensive and irreplaceable hardware. `Uninstall.cmd` and the
-`HDSTI_stock.dll` backup are there so you can always put things back.
+The patch and its source are original work containing no Heidelberg code, released
+under the MIT licence. **Newcolor 7000 is © Heidelberger Druckmaschinen AG and is
+not included.** Not affiliated with Heidelberg. No warranty.

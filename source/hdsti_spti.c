@@ -49,6 +49,9 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
+
+void temphook_start(int mode, const char *logpath, int threshold_mb, int wrapat_mb, int sidecar_files, int bigtiff);
+void temphook_report(void);
 #include <ntddscsi.h>
 
 /* ---- configuration (hdsti.ini next to the DLL, section [hdsti]) -------- */
@@ -61,6 +64,11 @@ static int   cfg_chunk_kb    = 0;      /* 0 = derive from adapter capability */
 static int   cfg_port        = -1;     /* -1 = search all ports */
 static int   cfg_log         = 1;
 static int   cfg_openmode    = 1;      /* 0=shared 1=exclusive-fail 2=same-handle */
+static int   cfg_temphook    = 0;
+static int   cfg_tempthresh  = 0;      /* MB; 0 = normal 2 GiB */
+static int   cfg_wrapat      = 0;      /* MB; 0 = normal 4 GiB */
+static int   cfg_sidecarfiles= 0;      /* also write .hdsti64 files */
+static int   cfg_bigtiffout  = 0;      /* saved tiff as BigTIFF */
 static int   cfg_retry_ua    = 1;      /* retry once on UNIT ATTENTION      */
 static int   cfg_zero_out    = 0;      /* write 0 to the two out-pointer args */
 
@@ -90,7 +98,7 @@ typedef struct {
 } SPTD_SENSE;
 
 /* ---- logging ---------------------------------------------------------- */
-static void lg(const char *fmt, ...)
+void lg(const char *fmt, ...)
 {
     va_list ap;
     if (!g_log || !cfg_log) return;
@@ -150,6 +158,11 @@ static void load_cfg(void)
     cfg_openmode = GetPrivateProfileIntA("hdsti", "OpenMode",      cfg_openmode, ini);
     cfg_zero_out = GetPrivateProfileIntA("hdsti", "ZeroOutArgs",   cfg_zero_out, ini);
     cfg_retry_ua = GetPrivateProfileIntA("hdsti", "RetryUnitAttention", cfg_retry_ua, ini);
+    cfg_temphook = GetPrivateProfileIntA("hdsti", "TempHook",  cfg_temphook, ini);
+    cfg_tempthresh = GetPrivateProfileIntA("hdsti", "TempHookThresholdMB", cfg_tempthresh, ini);
+    cfg_wrapat     = GetPrivateProfileIntA("hdsti", "TempHookWrapAtMB", cfg_wrapat, ini);
+    cfg_sidecarfiles = GetPrivateProfileIntA("hdsti", "TempHookSidecarFiles", cfg_sidecarfiles, ini);
+    cfg_bigtiffout = GetPrivateProfileIntA("hdsti", "BigTIFFOutput", cfg_bigtiffout, ini);
     {   /* [types] maps Newcolor's scanner-type number to a product substring.
            Defaults cover every scanner these modules support. */
         int t; char key[8];
@@ -567,7 +580,18 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID reserved)
         lg("=== HDSTI SPTI replacement loaded, pid %lu ===", GetCurrentProcessId());
         lg("vendor='%s' send=0x%02X recv=0x%02X timeout=%ds",
            cfg_vendor, cfg_send_op, cfg_recv_op, cfg_timeout);
+        if (cfg_temphook) {
+            char tp[MAX_PATH];
+            here(tp, "temphook.log");
+            temphook_start(cfg_temphook, tp, cfg_tempthresh, cfg_wrapat, cfg_sidecarfiles, cfg_bigtiffout);
+            lg("temp hook requested: mode %d threshold %d MB",
+               cfg_temphook, cfg_tempthresh);
+        } else {
+            lg("temp hook disabled (TempHook=0)");
+        }
+        if (g_log) fflush(g_log);
     } else if (reason == DLL_PROCESS_DETACH) {
+        if (cfg_temphook) temphook_report();
         lg("=== unloaded ===");
         if (g_log) fclose(g_log);
         DeleteCriticalSection(&g_lock);
